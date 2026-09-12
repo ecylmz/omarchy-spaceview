@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.ecylmz.spaceview",
+  "name": "Spaceview",
+  "version": "1.0.0",
+  "author": "Emre Can Yılmaz",
+  "description": "Fullscreen workspace overview with live window previews, trackpad gesture support, and drag-to-move between workspaces",
+  "kinds": [
+    "overlay"
+  ],
+  "entryPoints": {
+    "overlay": "Spaceview.qml"
+  }
+}
