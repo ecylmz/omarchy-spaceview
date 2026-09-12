@@ -29,9 +29,19 @@ BorderSurface {
   readonly property real titleHeight: Math.min(height * 0.3,
     Math.max(Style.space(28), Style.font.bodySmall + Style.spacing.controlPaddingY * 2))
 
+  // "l", "r", "u" or "d" while a dragged window would land on that side of
+  // this one; empty when this tile is not the drop target.
+  property string dropDirection: ""
+
+  readonly property point dragScenePosition: previewDrag.active
+    ? previewDrag.centroid.scenePosition : Qt.point(0, 0)
+
   signal activated()
   signal dragStarted(var toplevel)
   signal dragFinished(var toplevel)
+  signal dragMoved(point scenePosition)
+
+  onDragScenePositionChanged: if (previewDrag.active) root.dragMoved(dragScenePosition)
 
   radius: Style.cornerRadius
   color: previewHover.hovered || dragging
@@ -82,6 +92,26 @@ BorderSurface {
       smooth: true
       opacity: 0.72
     }
+  }
+
+  Rectangle {
+    id: dropZone
+    visible: root.dropDirection !== ""
+    z: 10
+    color: Style.selectedFillFor(Color.menu.text, Color.accent)
+    border.width: Math.max(1, Style.normalBorderWidth)
+    border.color: Color.accent
+
+    readonly property bool horizontal: root.dropDirection === "l" || root.dropDirection === "r"
+    width: horizontal ? parent.width / 2 : parent.width
+    height: horizontal ? parent.height : parent.height / 2
+    x: root.dropDirection === "r" ? parent.width / 2 : 0
+    y: root.dropDirection === "d" ? parent.height / 2 : 0
+
+    Behavior on x { NumberAnimation { duration: 70; easing.type: Easing.OutQuad } }
+    Behavior on y { NumberAnimation { duration: 70; easing.type: Easing.OutQuad } }
+    Behavior on width { NumberAnimation { duration: 70; easing.type: Easing.OutQuad } }
+    Behavior on height { NumberAnimation { duration: 70; easing.type: Easing.OutQuad } }
   }
 
   Rectangle {

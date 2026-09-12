@@ -14,7 +14,11 @@ Designed for the trackpad: swipe up with three fingers to open, swipe down to cl
 - Three-finger trackpad gestures that fire the moment the swipe is recognized,
   not when your fingers lift
 - Click a window to focus it, click a workspace to switch to it
-- Drag a window onto another workspace card to move it there
+- Drag a window to another workspace: the preview rides along with the pointer,
+  and dropping it on the left, right, top, or bottom half of an existing window
+  places it exactly there — the landing zone is highlighted while you drag
+  (dwindle only; it uses `layoutmsg preselect`). Drop it on empty space in the
+  card to let the layout decide
 - Keyboard navigation: arrows or `hjkl`, `Enter`/`Space` to activate, `1`–`9`/`0`
   to jump straight to a workspace, `Esc` to close
 - A trailing `+` card that takes you to the next empty workspace

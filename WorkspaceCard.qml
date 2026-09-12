@@ -38,11 +38,46 @@ BorderSurface {
         ? Border.surfaceSpec("menu", "border", Color.menu.border, Math.max(1, Style.normalBorderWidth))
         : Border.flat(Util.alpha(Color.menu.border, 0.35), Math.max(1, Style.normalBorderWidth))))
 
+  property var dropTargetPreview: null
+  property string dropTargetDirection: ""
+
+  // Which tile is under the pointer, and which side of it the window would
+  // take. Grid children are WindowPreview items laid out inside previewArea.
+  function updateDropTarget(cardX, cardY) {
+    if (!validDropTarget) {
+      root.dropTargetPreview = null
+      root.dropTargetDirection = ""
+      return
+    }
+
+    var local = previewArea.mapFromItem(root, cardX, cardY)
+    var tile = previewGrid.childAt(local.x, local.y)
+    if (!tile || tile.width <= 0 || tile.height <= 0) {
+      root.dropTargetPreview = null
+      root.dropTargetDirection = ""
+      return
+    }
+
+    var dx = (local.x - tile.x) / tile.width - 0.5
+    var dy = (local.y - tile.y) / tile.height - 0.5
+    root.dropTargetPreview = tile
+    root.dropTargetDirection = Math.abs(dx) >= Math.abs(dy)
+      ? (dx < 0 ? "l" : "r")
+      : (dy < 0 ? "u" : "d")
+  }
+
+  function clearDropTarget() {
+    root.dropTargetPreview = null
+    root.dropTargetDirection = ""
+  }
+
   signal workspaceActivated()
   signal windowActivated(var toplevel)
   signal windowDragStarted(var toplevel)
   signal windowDragFinished(var toplevel)
   signal windowDropped(var toplevel)
+  signal windowDroppedNextTo(var toplevel, var target, string direction)
+  signal windowDragMoved(point scenePosition)
 
   radius: Style.cornerRadius
   color: focused
@@ -137,6 +172,7 @@ BorderSurface {
     anchors.margins: Style.spacing.md
 
     Grid {
+      id: previewGrid
       anchors.fill: parent
       columns: root.previewColumns
       spacing: root.previewSpacing
@@ -145,14 +181,17 @@ BorderSurface {
         model: root.toplevelModel
 
         WindowPreview {
+          id: previewItem
           required property var modelData
 
           width: Math.max(1, (previewArea.width - root.previewSpacing * (root.previewColumns - 1)) / root.previewColumns)
           height: Math.max(1, (previewArea.height - root.previewSpacing * (root.previewRows - 1)) / root.previewRows)
           toplevel: modelData
+          dropDirection: root.dropTargetPreview === previewItem ? root.dropTargetDirection : ""
           onActivated: root.windowActivated(modelData)
           onDragStarted: root.windowDragStarted(modelData)
           onDragFinished: root.windowDragFinished(modelData)
+          onDragMoved: function(scenePosition) { root.windowDragMoved(scenePosition) }
         }
       }
     }
@@ -178,13 +217,25 @@ BorderSurface {
     keys: ["omarchy-window"]
     enabled: root.validDropTarget
 
+    onPositionChanged: function(drag) { root.updateDropTarget(drag.x, drag.y) }
+    onEntered: function(drag) { root.updateDropTarget(drag.x, drag.y) }
+    onExited: root.clearDropTarget()
+
     onDropped: function(drop) {
+      var target = root.dropTargetPreview
+      var direction = root.dropTargetDirection
+      root.clearDropTarget()
+
       if (!root.validDropTarget || !drop.source || !drop.source.toplevel) {
         drop.accepted = false
         return
       }
       drop.acceptProposedAction()
-      root.windowDropped(drop.source.toplevel)
+
+      if (target && target.toplevel && direction !== "")
+        root.windowDroppedNextTo(drop.source.toplevel, target.toplevel, direction)
+      else
+        root.windowDropped(drop.source.toplevel)
     }
   }
 }

@@ -19,6 +19,7 @@ Item {
   property bool opened: false
   property var targetScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
   property var draggedToplevel: null
+  property point dragScenePosition: Qt.point(0, 0)
   property int selectedCardIndex: -1
 
   readonly property var workspaceModel: root.workspaceIds()
@@ -178,6 +179,26 @@ Item {
     return true
   }
 
+  function moveWindowNextTo(toplevel, workspaceId, target, direction) {
+    var address = root.normalizedAddress(toplevel)
+    var targetAddress = root.normalizedAddress(target)
+    if (!address || !targetAddress || address === targetAddress) return false
+    if (workspaceId <= 0 || workspaceId > 10) return false
+
+    var restoreId = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
+    root.draggedToplevel = null
+
+    Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + targetAddress + "\" })")
+    Hyprland.dispatch("hl.dsp.layout(\"preselect " + direction + "\")")
+    Hyprland.dispatch("hl.dsp.window.move({ workspace = \"" + workspaceId
+      + "\", window = \"address:" + address + "\", follow = false })")
+
+    // Focusing the drop target moved us to its workspace; go back.
+    if (restoreId > 0 && restoreId !== workspaceId)
+      Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + restoreId + "\" })")
+    return true
+  }
+
   function beginWindowDrag(toplevel) {
     if (root.normalizedAddress(toplevel)) root.draggedToplevel = toplevel
   }
@@ -213,6 +234,30 @@ Item {
     MouseArea {
       anchors.fill: parent
       onClicked: root.dismiss()
+    }
+
+    Item {
+      id: dragGhost
+      z: 100
+      visible: root.draggedToplevel !== null
+      width: Math.max(Style.space(180), panel.width * 0.16)
+      height: width / 1.5
+      x: root.dragScenePosition.x - width / 2
+      y: root.dragScenePosition.y - height / 2
+      opacity: root.draggedToplevel !== null ? 0.92 : 0
+      scale: root.draggedToplevel !== null ? 1 : 0.9
+      enabled: false
+
+      Behavior on x { NumberAnimation { duration: 45; easing.type: Easing.OutQuad } }
+      Behavior on y { NumberAnimation { duration: 45; easing.type: Easing.OutQuad } }
+      Behavior on opacity { NumberAnimation { duration: 110 } }
+      Behavior on scale { NumberAnimation { duration: 110; easing.type: Easing.OutBack } }
+
+      WindowPreview {
+        anchors.fill: parent
+        toplevel: root.draggedToplevel
+        enabled: false
+      }
     }
 
     PanelKeyCatcher {
@@ -256,6 +301,10 @@ Item {
             onWorkspaceActivated: root.activateWorkspace(modelData)
             onWindowActivated: function(toplevel) { root.activateWindow(toplevel) }
             onWindowDragStarted: function(toplevel) { root.beginWindowDrag(toplevel) }
+            onWindowDragMoved: function(scenePosition) { root.dragScenePosition = scenePosition }
+            onWindowDroppedNextTo: function(toplevel, target, direction) {
+              root.moveWindowNextTo(toplevel, modelData, target, direction)
+            }
             onWindowDragFinished: function(toplevel) { root.endWindowDrag(toplevel) }
             onWindowDropped: function(toplevel) { root.moveWindowToWorkspace(toplevel, modelData) }
           }
