@@ -36,6 +36,27 @@ BorderSurface {
   readonly property point dragScenePosition: previewDrag.active
     ? previewDrag.centroid.scenePosition : Qt.point(0, 0)
 
+  // The capture is a single frame, so it has to be retaken whenever the
+  // compositor resizes the window under it — otherwise a re-tiled window
+  // keeps the shape it had when the overview opened.
+  readonly property var ipcObject: toplevel ? toplevel.lastIpcObject : null
+  property var capturedSize: null
+
+  onIpcObjectChanged: {
+    var size = ipcObject && ipcObject.size ? ipcObject.size : null
+    if (!size) return
+    if (capturedSize && capturedSize[0] === size[0] && capturedSize[1] === size[1]) return
+    capturedSize = size
+    recaptureTimer.restart()
+  }
+
+  // Give the client a moment to draw at its new size before recapturing.
+  Timer {
+    id: recaptureTimer
+    interval: 180
+    onTriggered: preview.captureFrame()
+  }
+
   signal activated()
   signal dragStarted(var toplevel)
   signal dragFinished(var toplevel)
