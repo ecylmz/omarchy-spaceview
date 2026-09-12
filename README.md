@@ -7,6 +7,8 @@ to rebuild when Hyprland updates.
 
 Designed for the trackpad: swipe up with three fingers to open, swipe down to close.
 
+![Spaceview showing five workspaces with live window previews](preview.png)
+
 ## Features
 
 - Fullscreen grid of all workspaces, sized to fit your screen
