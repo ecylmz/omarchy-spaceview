@@ -42,6 +42,14 @@ BorderSurface {
   readonly property var ipcObject: toplevel ? toplevel.lastIpcObject : null
   property var capturedSize: null
 
+  // A tile is reused when its window closes or when the drag ghost changes
+  // hands, so forget the captured size or a same-sized successor keeps the
+  // previous window's frame.
+  onToplevelChanged: {
+    capturedSize = null
+    if (toplevel) recaptureTimer.restart()
+  }
+
   onIpcObjectChanged: {
     var size = ipcObject && ipcObject.size ? ipcObject.size : null
     if (!size) return

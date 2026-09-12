@@ -6,7 +6,7 @@ import qs.Commons
 import qs.Ui
 
 // Fullscreen workspace overview. Summoned over shell IPC:
-//   omarchy-shell shell toggle emrecan.overview
+//   omarchy-shell shell toggle ecylmz.spaceview
 //
 // Hyprland is configured in Lua here, so every dispatch goes through the
 // hl.dsp.* form; the classic "workspace 3" syntax is a Lua syntax error.
@@ -22,7 +22,17 @@ Item {
   // Windows take a detour through this hidden workspace when they are
   // repositioned inside the workspace they already live on.
   readonly property string parkingWorkspace: "special:spaceview-move"
+  readonly property var layoutEvents: [
+    "openwindow", "closewindow", "movewindow", "movewindowv2",
+    "workspace", "workspacev2", "createworkspace", "createworkspacev2",
+    "destroyworkspace", "destroyworkspacev2", "moveworkspace", "moveworkspacev2",
+    "changefloatingmode", "fullscreen", "togglegroup", "moveintogroup", "moveoutofgroup"
+  ]
   property var pendingReposition: null
+  // What the user asked for while a reposition was still in flight, so
+  // finishing that move does not drag them back to where they started.
+  property int requestedWorkspaceId: -1
+  property string requestedWindowAddress: ""
   property point dragScenePosition: Qt.point(0, 0)
   property int selectedCardIndex: -1
 
@@ -190,9 +200,11 @@ Item {
   function open(payloadJson) {
     Hyprland.refreshToplevels()
     Hyprland.refreshWorkspaces()
-    root.rescueParkedWindows()
+    rescueTimer.restart()
     root.targetScreen = root.focusedScreen()
     root.draggedToplevel = null
+    root.requestedWorkspaceId = -1
+    root.requestedWindowAddress = ""
     root.selectedCardIndex = root.initialSelectedCardIndex()
     root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
@@ -201,12 +213,7 @@ Item {
   function close() {
     // Finish a parked reposition rather than stranding the window on the
     // hidden workspace when the overview is dismissed mid-move.
-    if (root.pendingReposition) {
-      repositionTimer.stop()
-      var job = root.pendingReposition
-      root.pendingReposition = null
-      root.placeWindow(job.address, job.targetAddress, job.direction, job.workspaceId, job.restoreId)
-    }
+    root.flushPendingReposition()
 
     root.draggedToplevel = null
     root.selectedCardIndex = -1
@@ -221,14 +228,17 @@ Item {
 
   function activateWorkspace(workspaceId) {
     if (workspaceId <= 0 || workspaceId > 10) return
+    root.requestedWorkspaceId = workspaceId
     Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + workspaceId + "\" })")
     Qt.callLater(root.dismiss)
   }
 
   function activateWindow(toplevel) {
     var address = root.normalizedAddress(toplevel)
-    if (address)
+    if (address) {
+      root.requestedWindowAddress = address
       Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + address + "\" })")
+    }
     else if (toplevel && toplevel.wayland)
       toplevel.wayland.activate()
     else
@@ -255,9 +265,16 @@ Item {
     Hyprland.dispatch("hl.dsp.window.move({ workspace = \"" + workspaceId
       + "\", window = \"address:" + address + "\", follow = false })")
 
-    // Focusing the drop target moved us to its workspace; go back.
-    if (restoreId > 0 && restoreId !== workspaceId)
+    // Focusing the drop target moved us to its workspace. Go back — unless the
+    // user has since asked for somewhere else, which outranks the restore.
+    if (root.requestedWindowAddress !== "")
+      Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + root.requestedWindowAddress + "\" })")
+    else if (root.requestedWorkspaceId > 0) {
+      if (root.requestedWorkspaceId !== workspaceId)
+        Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + root.requestedWorkspaceId + "\" })")
+    } else if (restoreId > 0 && restoreId !== workspaceId) {
       Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + restoreId + "\" })")
+    }
 
     root.refreshSoon()
   }
@@ -283,6 +300,10 @@ Item {
     if (!address || !targetAddress || address === targetAddress) return false
     if (workspaceId <= 0 || workspaceId > 10) return false
 
+    // A window is already parked; bring it home before parking another one,
+    // or it would be stranded on the hidden workspace.
+    root.flushPendingReposition()
+
     root.draggedToplevel = null
     root.pendingReposition = {
       address: address,
@@ -296,6 +317,14 @@ Item {
       + "\", window = \"address:" + address + "\", follow = false })")
     repositionTimer.restart()
     return true
+  }
+
+  function flushPendingReposition() {
+    if (!root.pendingReposition) return
+    repositionTimer.stop()
+    var job = root.pendingReposition
+    root.pendingReposition = null
+    root.placeWindow(job.address, job.targetAddress, job.direction, job.workspaceId, job.restoreId)
   }
 
   function beginWindowDrag(toplevel) {
@@ -417,28 +446,28 @@ Item {
   }
 
   // Anything that moves, opens or closes a window invalidates the miniature,
-  // whoever caused it.
+  // whoever caused it. Title and focus events are deliberately absent: they
+  // fire constantly and would keep the settle timer restarting forever.
   Connections {
     target: Hyprland
     enabled: root.opened
 
     function onRawEvent(event) {
-      var name = String(event && event.name ? event.name : "")
-      if (name.indexOf("window") !== -1 || name.indexOf("workspace") !== -1
-        || name === "changefloatingmode" || name === "fullscreen")
-        root.refreshSoon()
+      var name = String(event && event.name ? event.name : "").toLowerCase()
+      if (root.layoutEvents.indexOf(name) !== -1) root.refreshSoon()
     }
+  }
+
+  Timer {
+    id: rescueTimer
+    interval: 220
+    onTriggered: root.rescueParkedWindows()
   }
 
   Timer {
     id: repositionTimer
     interval: 140
-    onTriggered: {
-      var job = root.pendingReposition
-      root.pendingReposition = null
-      if (!job) return
-      root.placeWindow(job.address, job.targetAddress, job.direction, job.workspaceId, job.restoreId)
-    }
+    onTriggered: root.flushPendingReposition()
   }
 
   Timer {

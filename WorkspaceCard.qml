@@ -31,12 +31,17 @@ BorderSurface {
     var usable = bounds && bounds.width > 0 && bounds.height > 0
     var rects = []
 
+    var resolved = 0
+
     for (var i = 0; i < windows.length; i++) {
       var ipc = usable && windows[i] ? windows[i].lastIpcObject : null
       if (!ipc || !ipc.at || !ipc.size || ipc.size[0] <= 0 || ipc.size[1] <= 0) {
-        rects = []
-        break
+        // Hyprland announces a window before its geometry is queried. Hold
+        // that one tile back rather than dropping the whole card to a grid.
+        rects.push(null)
+        continue
       }
+      resolved += 1
       rects.push({
         x: (ipc.at[0] - bounds.x) / bounds.width,
         y: (ipc.at[1] - bounds.y) / bounds.height,
@@ -46,7 +51,7 @@ BorderSurface {
       })
     }
 
-    if (rects.length > 0 && rects.length === windows.length) return rects
+    if (resolved > 0) return rects
 
     var columns = windows.length === 2 ? 2 : Math.max(1, Math.ceil(Math.sqrt(windows.length)))
     var rows = Math.max(1, Math.ceil(windows.length / columns))
