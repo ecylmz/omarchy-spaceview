@@ -10,6 +10,8 @@ Designed for the trackpad: swipe up with three fingers to open, swipe down to cl
 ## Features
 
 - Fullscreen grid of all workspaces, sized to fit your screen
+- Each card is a true miniature of the workspace: windows are placed from
+  Hyprland's own geometry, so a vertical split reads as a vertical split
 - Live Wayland window previews (`ScreencopyView`), with the app icon as a fallback
 - Three-finger trackpad gestures that fire the moment the swipe is recognized,
   not when your fingers lift

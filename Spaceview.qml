@@ -31,7 +31,9 @@ Item {
     return ids
   }
   readonly property int cardCount: overviewCardModel.length
-  readonly property real cardAspectRatio: 1.55
+  readonly property var defaultMonitorBounds: root.monitorBoundsFor(-1)
+  readonly property real cardAspectRatio: defaultMonitorBounds && defaultMonitorBounds.height > 0
+    ? defaultMonitorBounds.width / defaultMonitorBounds.height : 1.55
   readonly property real outerMargin: Math.max(Style.gapsOut, Style.spacing.panelPadding)
   readonly property real gridSpacing: Style.spacing.lg
   readonly property real availableWidth: Math.max(1, panel.width - outerMargin * 2)
@@ -44,6 +46,32 @@ Item {
     (availableWidth - gridSpacing * (columns - 1)) / columns,
     ((availableHeight - gridSpacing * (rows - 1)) / rows) * cardAspectRatio))
   readonly property real cardHeight: Math.max(1, cardWidth / cardAspectRatio)
+
+  // Logical bounds of the monitor a workspace lives on, used to scale window
+  // geometry into each card. Falls back to the focused monitor.
+  function monitorBoundsFor(workspaceId) {
+    var workspace = root.workspaceById(workspaceId)
+    var wanted = workspace && workspace.lastIpcObject
+      ? String(workspace.lastIpcObject.monitor || "") : ""
+    var monitors = Hyprland.monitors ? Hyprland.monitors.values : []
+    var found = null
+
+    for (var i = 0; i < monitors.length; i++) {
+      var ipc = monitors[i] ? monitors[i].lastIpcObject : null
+      if (ipc && wanted && String(ipc.name || "") === wanted) { found = ipc; break }
+    }
+
+    if (!found && Hyprland.focusedMonitor) found = Hyprland.focusedMonitor.lastIpcObject
+    if (!found || !found.width || !found.height) return null
+
+    var scale = found.scale > 0 ? found.scale : 1
+    return {
+      x: found.x || 0,
+      y: found.y || 0,
+      width: found.width / scale,
+      height: found.height / scale
+    }
+  }
 
   function workspaceById(id) {
     var values = Hyprland.workspaces.values
@@ -293,6 +321,7 @@ Item {
             height: root.cardHeight
             workspaceId: modelData
             workspace: isAddCard ? null : root.workspaceById(modelData)
+            monitorBounds: isAddCard ? null : root.monitorBoundsFor(modelData)
             addWorkspace: isAddCard
             draggedToplevel: root.draggedToplevel
             keyboardSelected: index === root.selectedCardIndex

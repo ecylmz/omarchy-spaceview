@@ -14,14 +14,55 @@ BorderSurface {
   property bool addWorkspace: false
   property bool keyboardSelected: false
   property var draggedToplevel: null
+  // { x, y, width, height } of the workspace's monitor in logical pixels.
+  property var monitorBounds: null
 
   readonly property var toplevelModel: workspace ? workspace.toplevels : []
   readonly property int windowCount: workspace ? workspace.toplevels.values.length : 0
   readonly property bool occupied: windowCount > 0
-  readonly property int previewColumns: windowCount === 2 ? 2 : Math.max(1, Math.ceil(Math.sqrt(windowCount)))
-  readonly property int previewRows: Math.max(1, Math.ceil(windowCount / previewColumns))
+  readonly property real monitorAspect: monitorBounds && monitorBounds.height > 0
+    ? monitorBounds.width / monitorBounds.height : 1.55
+
+  // Where each window sits, as fractions of the monitor. Falls back to an even
+  // grid when Hyprland has no geometry for a window (e.g. it just mapped).
+  readonly property var layoutRects: {
+    var windows = root.workspace ? root.workspace.toplevels.values : []
+    var bounds = root.monitorBounds
+    var usable = bounds && bounds.width > 0 && bounds.height > 0
+    var rects = []
+
+    for (var i = 0; i < windows.length; i++) {
+      var ipc = usable && windows[i] ? windows[i].lastIpcObject : null
+      if (!ipc || !ipc.at || !ipc.size || ipc.size[0] <= 0 || ipc.size[1] <= 0) {
+        rects = []
+        break
+      }
+      rects.push({
+        x: (ipc.at[0] - bounds.x) / bounds.width,
+        y: (ipc.at[1] - bounds.y) / bounds.height,
+        width: ipc.size[0] / bounds.width,
+        height: ipc.size[1] / bounds.height,
+        floating: ipc.floating === true
+      })
+    }
+
+    if (rects.length > 0 && rects.length === windows.length) return rects
+
+    var columns = windows.length === 2 ? 2 : Math.max(1, Math.ceil(Math.sqrt(windows.length)))
+    var rows = Math.max(1, Math.ceil(windows.length / columns))
+    var fallback = []
+    for (var j = 0; j < windows.length; j++) {
+      fallback.push({
+        x: (j % columns) / columns,
+        y: Math.floor(j / columns) / rows,
+        width: 1 / columns,
+        height: 1 / rows,
+        floating: false
+      })
+    }
+    return fallback
+  }
   readonly property real headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
-  readonly property real previewSpacing: Style.spacing.sm
   readonly property int draggedSourceWorkspaceId: draggedToplevel && draggedToplevel.workspace
     ? Number(draggedToplevel.workspace.id) : -1
   readonly property bool validDropTarget: draggedToplevel !== null
@@ -50,8 +91,8 @@ BorderSurface {
       return
     }
 
-    var local = previewArea.mapFromItem(root, cardX, cardY)
-    var tile = previewGrid.childAt(local.x, local.y)
+    var local = stage.mapFromItem(root, cardX, cardY)
+    var tile = stage.childAt(local.x, local.y)
     if (!tile || tile.width <= 0 || tile.height <= 0) {
       root.dropTargetPreview = null
       root.dropTargetDirection = ""
@@ -171,11 +212,15 @@ BorderSurface {
     anchors.bottom: parent.bottom
     anchors.margins: Style.spacing.md
 
-    Grid {
-      id: previewGrid
-      anchors.fill: parent
-      columns: root.previewColumns
-      spacing: root.previewSpacing
+    // The stage keeps the monitor's aspect ratio, so a tall split reads as a
+    // tall split instead of being stretched to the card.
+    Item {
+      id: stage
+      width: Math.min(parent.width, parent.height * root.monitorAspect)
+      height: width / root.monitorAspect
+      anchors.centerIn: parent
+
+      readonly property real inset: Math.max(1, Style.space(2)) / 2
 
       Repeater {
         model: root.toplevelModel
@@ -183,9 +228,17 @@ BorderSurface {
         WindowPreview {
           id: previewItem
           required property var modelData
+          required property int index
 
-          width: Math.max(1, (previewArea.width - root.previewSpacing * (root.previewColumns - 1)) / root.previewColumns)
-          height: Math.max(1, (previewArea.height - root.previewSpacing * (root.previewRows - 1)) / root.previewRows)
+          readonly property var rect: root.layoutRects[index] || null
+
+          visible: rect !== null
+          x: rect ? rect.x * stage.width + stage.inset : 0
+          y: rect ? rect.y * stage.height + stage.inset : 0
+          width: rect ? Math.max(1, rect.width * stage.width - stage.inset * 2) : 1
+          height: rect ? Math.max(1, rect.height * stage.height - stage.inset * 2) : 1
+          z: rect && rect.floating ? 2 : 1
+
           toplevel: modelData
           dropDirection: root.dropTargetPreview === previewItem ? root.dropTargetDirection : ""
           onActivated: root.windowActivated(modelData)

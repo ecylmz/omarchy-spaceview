@@ -61,7 +61,7 @@ BorderSurface {
     anchors.top: parent.top
     anchors.left: parent.left
     anchors.right: parent.right
-    anchors.bottom: titleBar.top
+    anchors.bottom: parent.bottom
     clip: true
 
     ScreencopyView {
