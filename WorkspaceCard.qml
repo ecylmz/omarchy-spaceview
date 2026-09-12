@@ -65,11 +65,13 @@ BorderSurface {
   readonly property real headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   readonly property int draggedSourceWorkspaceId: draggedToplevel && draggedToplevel.workspace
     ? Number(draggedToplevel.workspace.id) : -1
-  readonly property bool validDropTarget: draggedToplevel !== null
+  readonly property bool dragActive: draggedToplevel !== null
     && String(draggedToplevel.address || "") !== ""
     && workspaceId > 0 && workspaceId <= 10
-    && draggedSourceWorkspaceId !== workspaceId
-  readonly property bool dropHovered: validDropTarget && dropArea.containsDrag
+  readonly property bool foreignDrag: dragActive && draggedSourceWorkspaceId !== workspaceId
+  readonly property bool validDropTarget: dragActive && (foreignDrag || windowCount > 1)
+  readonly property bool dropHovered: foreignDrag && dropArea.containsDrag
+    && root.dropTargetPreview === null
   readonly property real accentBorderWidth: Math.max(Style.space(2), Style.focusBorderWidth)
   readonly property var normalBorderSpec: focused
     ? Border.flat(Color.accent, root.accentBorderWidth)
@@ -94,6 +96,13 @@ BorderSurface {
     var local = stage.mapFromItem(root, cardX, cardY)
     var tile = stage.childAt(local.x, local.y)
     if (!tile || tile.width <= 0 || tile.height <= 0) {
+      root.dropTargetPreview = null
+      root.dropTargetDirection = ""
+      return
+    }
+
+    var dragged = root.draggedToplevel ? String(root.draggedToplevel.address || "") : ""
+    if (tile.toplevel && dragged !== "" && String(tile.toplevel.address || "") === dragged) {
       root.dropTargetPreview = null
       root.dropTargetDirection = ""
       return
@@ -126,11 +135,11 @@ BorderSurface {
     : (occupied ? Util.alpha(Color.menu.background, 0.82) : Util.alpha(Color.menu.background, 0.62))
   borderSpec: dropHovered
     ? Border.withWidth(Border.controlSpec("focus", Color.menu.text, Color.accent), Math.max(Style.space(2), Style.focusBorderWidth))
-    : (validDropTarget
+    : (foreignDrag
       ? Border.withWidth(Border.controlSpec("hover-cursor", Color.menu.text, Color.accent), root.accentBorderWidth)
       : normalBorderSpec)
   clip: true
-  opacity: focused || keyboardSelected || dropHovered ? 1 : 0.74
+  opacity: focused || keyboardSelected || dragActive ? 1 : 0.74
 
   Behavior on opacity { NumberAnimation { duration: 90 } }
 
@@ -146,7 +155,7 @@ BorderSurface {
     z: 2
     color: root.dropHovered
       ? Style.selectedFillFor(Color.menu.text, Color.accent)
-      : (root.validDropTarget || root.keyboardSelected
+      : (root.foreignDrag || root.keyboardSelected
         ? Style.hoverFillFor(Color.menu.text, Color.accent)
         : (root.focused ? Util.alpha(Color.accent, 0.07) : "transparent"))
 
@@ -283,12 +292,16 @@ BorderSurface {
         drop.accepted = false
         return
       }
-      drop.acceptProposedAction()
 
-      if (target && target.toplevel && direction !== "")
+      if (target && target.toplevel && direction !== "") {
+        drop.acceptProposedAction()
         root.windowDroppedNextTo(drop.source.toplevel, target.toplevel, direction)
-      else
+      } else if (root.foreignDrag) {
+        drop.acceptProposedAction()
         root.windowDropped(drop.source.toplevel)
+      } else {
+        drop.accepted = false
+      }
     }
   }
 }

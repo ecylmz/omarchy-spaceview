@@ -21,6 +21,9 @@ Designed for the trackpad: swipe up with three fingers to open, swipe down to cl
   places it exactly there — the landing zone is highlighted while you drag
   (dwindle only; it uses `layoutmsg preselect`). Drop it on empty space in the
   card to let the layout decide
+- Rearrange a workspace without leaving it: drop a window on a side of one of
+  its own neighbours to turn a vertical split into a horizontal one, and the
+  cards re-read Hyprland's geometry as soon as anything moves
 - Keyboard navigation: arrows or `hjkl`, `Enter`/`Space` to activate, `1`–`9`/`0`
   to jump straight to a workspace, `Esc` to close
 - A trailing `+` card that takes you to the next empty workspace

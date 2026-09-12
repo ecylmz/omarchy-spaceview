@@ -19,6 +19,10 @@ Item {
   property bool opened: false
   property var targetScreen: Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
   property var draggedToplevel: null
+  // Windows take a detour through this hidden workspace when they are
+  // repositioned inside the workspace they already live on.
+  readonly property string parkingWorkspace: "special:spaceview-move"
+  property var pendingReposition: null
   property point dragScenePosition: Qt.point(0, 0)
   property int selectedCardIndex: -1
 
@@ -159,7 +163,34 @@ Item {
     return screens.length > 0 ? screens[0] : null
   }
 
+  // Hyprland re-tiles asynchronously, so poll its geometry a few times after
+  // a move instead of reading stale positions once.
+  function refreshSoon() {
+    settleTimer.ticks = 0
+    settleTimer.restart()
+  }
+
+  // Safety net for a reposition that was cut short in an earlier session.
+  function rescueParkedWindows() {
+    var all = Hyprland.toplevels ? Hyprland.toplevels.values : []
+    var fallbackId = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 1
+
+    for (var i = 0; i < all.length; i++) {
+      var ipc = all[i] ? all[i].lastIpcObject : null
+      var name = ipc && ipc.workspace ? String(ipc.workspace.name || "") : ""
+      if (name !== root.parkingWorkspace) continue
+
+      var address = root.normalizedAddress(all[i])
+      if (address)
+        Hyprland.dispatch("hl.dsp.window.move({ workspace = \"" + fallbackId
+          + "\", window = \"address:" + address + "\", follow = false })")
+    }
+  }
+
   function open(payloadJson) {
+    Hyprland.refreshToplevels()
+    Hyprland.refreshWorkspaces()
+    root.rescueParkedWindows()
     root.targetScreen = root.focusedScreen()
     root.draggedToplevel = null
     root.selectedCardIndex = root.initialSelectedCardIndex()
@@ -168,6 +199,15 @@ Item {
   }
 
   function close() {
+    // Finish a parked reposition rather than stranding the window on the
+    // hidden workspace when the overview is dismissed mid-move.
+    if (root.pendingReposition) {
+      repositionTimer.stop()
+      var job = root.pendingReposition
+      root.pendingReposition = null
+      root.placeWindow(job.address, job.targetAddress, job.direction, job.workspaceId, job.restoreId)
+    }
+
     root.draggedToplevel = null
     root.selectedCardIndex = -1
     root.opened = false
@@ -207,15 +247,9 @@ Item {
     return true
   }
 
-  function moveWindowNextTo(toplevel, workspaceId, target, direction) {
-    var address = root.normalizedAddress(toplevel)
-    var targetAddress = root.normalizedAddress(target)
-    if (!address || !targetAddress || address === targetAddress) return false
-    if (workspaceId <= 0 || workspaceId > 10) return false
-
-    var restoreId = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
-    root.draggedToplevel = null
-
+  // dwindle opens a window next to the workspace's focused window, and
+  // `preselect` picks the side, so focus the drop target first.
+  function placeWindow(address, targetAddress, direction, workspaceId, restoreId) {
     Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + targetAddress + "\" })")
     Hyprland.dispatch("hl.dsp.layout(\"preselect " + direction + "\")")
     Hyprland.dispatch("hl.dsp.window.move({ workspace = \"" + workspaceId
@@ -224,6 +258,43 @@ Item {
     // Focusing the drop target moved us to its workspace; go back.
     if (restoreId > 0 && restoreId !== workspaceId)
       Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + restoreId + "\" })")
+
+    root.refreshSoon()
+  }
+
+  function moveWindowNextTo(toplevel, workspaceId, target, direction) {
+    var address = root.normalizedAddress(toplevel)
+    var targetAddress = root.normalizedAddress(target)
+    if (!address || !targetAddress || address === targetAddress) return false
+    if (workspaceId <= 0 || workspaceId > 10) return false
+
+    var restoreId = Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
+    root.draggedToplevel = null
+    root.placeWindow(address, targetAddress, direction, workspaceId, restoreId)
+    return true
+  }
+
+  // Hyprland ignores a move to the workspace a window is already on, so a
+  // reposition parks the window on a hidden special workspace first and then
+  // brings it back next to the drop target.
+  function repositionWindow(toplevel, workspaceId, target, direction) {
+    var address = root.normalizedAddress(toplevel)
+    var targetAddress = root.normalizedAddress(target)
+    if (!address || !targetAddress || address === targetAddress) return false
+    if (workspaceId <= 0 || workspaceId > 10) return false
+
+    root.draggedToplevel = null
+    root.pendingReposition = {
+      address: address,
+      targetAddress: targetAddress,
+      direction: direction,
+      workspaceId: workspaceId,
+      restoreId: Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1
+    }
+
+    Hyprland.dispatch("hl.dsp.window.move({ workspace = \"" + root.parkingWorkspace
+      + "\", window = \"address:" + address + "\", follow = false })")
+    repositionTimer.restart()
     return true
   }
 
@@ -332,12 +403,56 @@ Item {
             onWindowDragStarted: function(toplevel) { root.beginWindowDrag(toplevel) }
             onWindowDragMoved: function(scenePosition) { root.dragScenePosition = scenePosition }
             onWindowDroppedNextTo: function(toplevel, target, direction) {
-              root.moveWindowNextTo(toplevel, modelData, target, direction)
+              if (root.sourceWorkspaceId(toplevel) === modelData)
+                root.repositionWindow(toplevel, modelData, target, direction)
+              else
+                root.moveWindowNextTo(toplevel, modelData, target, direction)
             }
             onWindowDragFinished: function(toplevel) { root.endWindowDrag(toplevel) }
             onWindowDropped: function(toplevel) { root.moveWindowToWorkspace(toplevel, modelData) }
           }
         }
+      }
+    }
+  }
+
+  // Anything that moves, opens or closes a window invalidates the miniature,
+  // whoever caused it.
+  Connections {
+    target: Hyprland
+    enabled: root.opened
+
+    function onRawEvent(event) {
+      var name = String(event && event.name ? event.name : "")
+      if (name.indexOf("window") !== -1 || name.indexOf("workspace") !== -1
+        || name === "changefloatingmode" || name === "fullscreen")
+        root.refreshSoon()
+    }
+  }
+
+  Timer {
+    id: repositionTimer
+    interval: 140
+    onTriggered: {
+      var job = root.pendingReposition
+      root.pendingReposition = null
+      if (!job) return
+      root.placeWindow(job.address, job.targetAddress, job.direction, job.workspaceId, job.restoreId)
+    }
+  }
+
+  Timer {
+    id: settleTimer
+    interval: 120
+    repeat: true
+    property int ticks: 0
+    onTriggered: {
+      Hyprland.refreshToplevels()
+      Hyprland.refreshWorkspaces()
+      ticks += 1
+      if (ticks >= 3) {
+        stop()
+        ticks = 0
       }
     }
   }
