@@ -147,7 +147,7 @@ Item {
   function dismiss() {
     root.close()
     if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "io.github.ecylmz.spaceview")
+      root.shell.hide((root.manifest && root.manifest.id) || "ecylmz.spaceview")
   }
 
   function activateWorkspace(workspaceId) {
@@ -193,7 +193,7 @@ Item {
     visible: root.opened && root.targetScreen !== null
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "omarchy-workspace-overview"
+    WlrLayershell.namespace: "spaceview"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore

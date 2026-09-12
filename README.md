@@ -38,7 +38,7 @@ Verify it is there:
 
 ```bash
 omarchy plugin list | grep spaceview
-omarchy-shell shell toggle io.github.ecylmz.spaceview
+omarchy-shell shell toggle ecylmz.spaceview
 ```
 
 ## Open it with a trackpad gesture
@@ -52,7 +52,7 @@ Add this to `~/.config/hypr/input.lua`:
 local spaceview = function(command)
   return {
     start = function()
-      hl.exec_cmd("omarchy-shell shell " .. command .. " io.github.ecylmz.spaceview")
+      hl.exec_cmd("omarchy-shell shell " .. command .. " ecylmz.spaceview")
     end,
     update = function() end,
     finish = function() end,
@@ -70,7 +70,7 @@ Then `hyprctl reload`.
 Add this to `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle io.github.ecylmz.spaceview")
+o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle ecylmz.spaceview")
 ```
 
 ## Keys
@@ -85,7 +85,7 @@ o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle io.github.
 ## Remove
 
 ```bash
-omarchy plugin remove io.github.ecylmz.spaceview --yes
+omarchy plugin remove ecylmz.spaceview --yes
 ```
 
 Then delete the `hl.gesture(...)` block from `~/.config/hypr/input.lua` (or the
