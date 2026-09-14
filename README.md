@@ -1,41 +1,34 @@
 # Spaceview
 
 A fullscreen workspace overview for [Omarchy](https://omarchy.org/): your ten
-workspaces side by side, every window a live preview. Built as an
-`omarchy-shell` plugin, so it runs inside the shell you already have — no
-compositor plugin, no compiling, nothing to rebuild when Hyprland updates.
+workspaces side by side, every window a live preview. It runs inside the
+`omarchy-shell` you already have — no compositor plugin, no compiling, nothing
+to rebuild when Hyprland updates.
 
-Designed for the trackpad: swipe up with three fingers to open, swipe down to close.
+Open it with a three-finger swipe, a keyboard shortcut, or both.
 
 ![Spaceview showing five workspaces with live window previews](preview.png)
 
 ## Features
 
-- Fullscreen grid of workspaces 1-10, sized to fit your screen (1-5 are always
-  shown, the rest appear once they exist)
 - Each card is a true miniature of the workspace: windows are placed from
   Hyprland's own geometry, so a vertical split reads as a vertical split
-- Live Wayland window previews (`ScreencopyView`), with the app icon as a fallback
-- Three-finger trackpad gestures that fire the moment the swipe is recognized,
-  not when your fingers lift
+- Live Wayland window previews, falling back to the app icon while a window has
+  no frame yet
 - Click a window to focus it, click a workspace to switch to it
-- Drag a window to another workspace: the preview rides along with the pointer,
-  and dropping it on the left, right, top, or bottom half of an existing window
-  places it exactly there — the landing zone is highlighted while you drag
-  (dwindle only; it uses `layoutmsg preselect`). Drop it on empty space in the
-  card to let the layout decide
-- Rearrange a workspace without leaving it: drop a window on a side of one of
-  its own neighbours to turn a vertical split into a horizontal one, and the
-  cards re-read Hyprland's geometry as soon as anything moves
-- Keyboard navigation: arrows or `hjkl`, `Enter`/`Space` to activate, `1`–`9`/`0`
-  to jump straight to a workspace, `Esc` to close
-- A trailing `+` card that takes you to the next empty workspace, up to 10
-- Styling comes entirely from Omarchy theme tokens, so it follows `omarchy theme set`
+- Drag a window between workspaces, or within one to rearrange it: drop it on
+  the left, right, top, or bottom half of another window to land it exactly
+  there, with the landing zone highlighted as you drag (dwindle only)
+- Keyboard driven throughout: arrows or `hjkl`, `Enter` to switch, `1`–`9`/`0`
+  to jump, `Esc` to close
+- Workspaces 1–10, with 1–5 always shown and a trailing `+` card for the next
+  empty one
+- Follows your Omarchy theme, since every color is a theme token
 
 ## Requirements
 
 - Omarchy 4 (Quattro) with `omarchy-shell`
-- Hyprland with the Lua configuration format (Omarchy 4 default) for the gesture setup
+- Hyprland with Omarchy 4's Lua configuration format
 - Quickshell 0.3+ with the Wayland screencopy module (ships with Omarchy)
 
 No external binaries, services, or network access.
@@ -46,19 +39,39 @@ No external binaries, services, or network access.
 omarchy plugin add https://github.com/ecylmz/omarchy-spaceview.git --enable --yes
 ```
 
-Verify it is there:
+## Open it
+
+Every way of opening Spaceview goes through the same shell IPC call, so you can
+bind it to whatever you like:
 
 ```bash
-omarchy plugin list | grep spaceview
-omarchy-shell shell toggle ecylmz.spaceview
+omarchy-shell shell toggle ecylmz.spaceview   # open if closed, close if open
+omarchy-shell shell summon ecylmz.spaceview   # open
+omarchy-shell shell hide ecylmz.spaceview     # close
 ```
 
-## Open it with a trackpad gesture
+### With a keyboard shortcut
 
-Add this to `~/.config/hypr/input.lua`:
+Add this to `~/.config/hypr/bindings.lua`, then run `hyprctl reload`:
 
 ```lua
--- Three fingers up opens Spaceview, three fingers down closes it.
+o.bind("SUPER + CTRL + G", "Workspace overview", "omarchy-shell shell toggle ecylmz.spaceview")
+```
+
+Any free combination works — `omarchy menu keybindings --print` lists the ones
+already taken. To claim a key Omarchy uses by default, unbind it first:
+
+```lua
+hl.unbind("SUPER + G") -- Omarchy binds this to "Toggle window grouping"
+o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle ecylmz.spaceview")
+```
+
+### With a trackpad gesture
+
+Three fingers up opens Spaceview, three fingers down closes it. Add this to
+`~/.config/hypr/input.lua`, then run `hyprctl reload`:
+
+```lua
 -- The table form fires on `start`, i.e. as soon as the swipe is recognized;
 -- a bare `action = function() ... end` would only fire once your fingers lift.
 local spaceview = function(command)
@@ -73,16 +86,6 @@ end
 
 hl.gesture({ fingers = 3, direction = "up", action = spaceview("summon") })
 hl.gesture({ fingers = 3, direction = "down", action = spaceview("hide") })
-```
-
-Then `hyprctl reload`.
-
-## Open it with a key binding
-
-Add this to `~/.config/hypr/bindings.lua`:
-
-```lua
-o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle ecylmz.spaceview")
 ```
 
 ## Keys
@@ -100,29 +103,29 @@ o.bind("SUPER + G", "Workspace overview", "omarchy-shell shell toggle ecylmz.spa
 omarchy plugin remove ecylmz.spaceview --yes
 ```
 
-Then delete the `hl.gesture(...)` block from `~/.config/hypr/input.lua` (or the
-binding from `~/.config/hypr/bindings.lua`) and run `hyprctl reload`.
+Then delete the binding or the `hl.gesture(...)` block you added and run
+`hyprctl reload`.
 
 ## Security
 
 Omarchy plugins run unsandboxed with your user permissions, so review the source
 before installing — it is three QML files and a manifest.
 
-Spaceview ships no binaries and no helper scripts. It talks to Hyprland only
-through Quickshell's `Hyprland.dispatch`, and every window it names is checked
-against `^(0x)?[0-9a-fA-F]+$` before the address reaches a dispatch. It reads no
-files, spawns no processes, opens no sockets, and writes nothing outside the
-shell's own state. See [SECURITY.md](SECURITY.md) for the invariants a change
-has to keep.
+Spaceview ships no binaries and no helper scripts, spawns no processes, and
+opens no sockets. It talks to Hyprland only through Quickshell's
+`Hyprland.dispatch`, validating every window address against
+`^(0x)?[0-9a-fA-F]+$` first, and it never writes to your Hyprland or Omarchy
+configuration — the binding and gesture above are yours to add.
+[SECURITY.md](SECURITY.md) lists the invariants a change has to keep.
 
 ## Credits
 
-The grid, card, and preview layout started from the workspace overview proposed in
-[omacom/omarchy#6611](https://github.com/omacom/omarchy/pull/6611) by
-[@sanjyay](https://github.com/sanjyay), which was closed rather than merged. That
-code is MIT licensed as part of Omarchy. Spaceview reworks it into a standalone
-third-party plugin: Lua-form Hyprland dispatches, gesture-driven summoning, a
-reworked focus hierarchy, and a deeper scrim for fullscreen use.
+The grid, card, and preview layout started from the workspace overview proposed
+in [omacom/omarchy#6611](https://github.com/omacom/omarchy/pull/6611) by
+[@sanjyay](https://github.com/sanjyay), which was closed rather than merged.
+That code is MIT licensed as part of Omarchy. Spaceview reworks it into a
+standalone third-party plugin: Lua-form Hyprland dispatches, gesture-driven
+summoning, a reworked focus hierarchy, and a deeper scrim for fullscreen use.
 
 ## License
 
