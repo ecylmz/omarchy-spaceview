@@ -228,7 +228,7 @@ BorderSurface {
     onYChanged: if (previewDrag.active) lastY = y
     Drag.active: dragSessionActive
     Drag.source: root
-    Drag.keys: ["omarchy-window"]
+    Drag.keys: ["ecylmz.spaceview-window"]
     Drag.supportedActions: Qt.MoveAction
     Drag.proposedAction: Qt.MoveAction
   }

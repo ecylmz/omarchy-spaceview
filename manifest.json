@@ -4,6 +4,7 @@
   "name": "Spaceview",
   "version": "1.0.0",
   "author": "Emre Can Yılmaz",
+  "license": "MIT",
   "description": "Fullscreen workspace overview with live window previews, trackpad gesture support, and drag-to-move between workspaces",
   "kinds": [
     "overlay"

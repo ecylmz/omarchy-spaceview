@@ -1,9 +1,9 @@
 # Spaceview
 
-A fullscreen workspace overview for [Omarchy](https://omarchy.org/): every workspace
-side by side, every window a live preview. Built as an `omarchy-shell` plugin, so it
-runs inside the shell you already have — no compositor plugin, no compiling, nothing
-to rebuild when Hyprland updates.
+A fullscreen workspace overview for [Omarchy](https://omarchy.org/): your ten
+workspaces side by side, every window a live preview. Built as an
+`omarchy-shell` plugin, so it runs inside the shell you already have — no
+compositor plugin, no compiling, nothing to rebuild when Hyprland updates.
 
 Designed for the trackpad: swipe up with three fingers to open, swipe down to close.
 
@@ -11,7 +11,8 @@ Designed for the trackpad: swipe up with three fingers to open, swipe down to cl
 
 ## Features
 
-- Fullscreen grid of all workspaces, sized to fit your screen
+- Fullscreen grid of workspaces 1-10, sized to fit your screen (1-5 are always
+  shown, the rest appear once they exist)
 - Each card is a true miniature of the workspace: windows are placed from
   Hyprland's own geometry, so a vertical split reads as a vertical split
 - Live Wayland window previews (`ScreencopyView`), with the app icon as a fallback
@@ -28,7 +29,7 @@ Designed for the trackpad: swipe up with three fingers to open, swipe down to cl
   cards re-read Hyprland's geometry as soon as anything moves
 - Keyboard navigation: arrows or `hjkl`, `Enter`/`Space` to activate, `1`–`9`/`0`
   to jump straight to a workspace, `Esc` to close
-- A trailing `+` card that takes you to the next empty workspace
+- A trailing `+` card that takes you to the next empty workspace, up to 10
 - Styling comes entirely from Omarchy theme tokens, so it follows `omarchy theme set`
 
 ## Requirements
@@ -101,6 +102,18 @@ omarchy plugin remove ecylmz.spaceview --yes
 
 Then delete the `hl.gesture(...)` block from `~/.config/hypr/input.lua` (or the
 binding from `~/.config/hypr/bindings.lua`) and run `hyprctl reload`.
+
+## Security
+
+Omarchy plugins run unsandboxed with your user permissions, so review the source
+before installing — it is three QML files and a manifest.
+
+Spaceview ships no binaries and no helper scripts. It talks to Hyprland only
+through Quickshell's `Hyprland.dispatch`, and every window it names is checked
+against `^(0x)?[0-9a-fA-F]+$` before the address reaches a dispatch. It reads no
+files, spawns no processes, opens no sockets, and writes nothing outside the
+shell's own state. See [SECURITY.md](SECURITY.md) for the invariants a change
+has to keep.
 
 ## Credits
 

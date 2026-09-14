@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
@@ -281,7 +280,7 @@ BorderSurface {
     id: dropArea
     anchors.fill: parent
     z: 20
-    keys: ["omarchy-window"]
+    keys: ["ecylmz.spaceview-window"]
     enabled: root.validDropTarget
 
     onPositionChanged: function(drag) { root.updateDropTarget(drag.x, drag.y) }

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirrors the checks in omarchy's shell/services/PluginRegistry.qml and
+      # `omarchy plugin validate`, so a bad manifest fails here rather than
+      # silently refusing to load inside omarchy-shell.
+      - name: Validate manifest
+        run: |
+          jq -e '.schemaVersion == 1' manifest.json > /dev/null
+          for field in id name version author license kinds entryPoints; do
+            jq -e --arg f "$field" 'has($f)' manifest.json > /dev/null
+          done
+          id=$(jq -r '.id' manifest.json)
+          [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          [[ $id != omarchy.* ]]
+          jq -e '(.kinds | type) == "array" and (.kinds | length) > 0' manifest.json > /dev/null
+          jq -e '(.entryPoints | type) == "object"' manifest.json > /dev/null
+          jq -e '(.kinds | index("overlay")) != null' manifest.json > /dev/null
+          test -f "$(jq -r '.entryPoints.overlay' manifest.json)"
+
+      - name: Require the marketplace listing assets
+        run: test -f preview.png && test -f LICENSE && test -f README.md
+
+      - name: Reject repository symlinks
+        run: test -z "$(find . -path ./.git -prune -o -type l -print -quit)"
+
+      # Spaceview draws windows and asks Hyprland to move them. It has no
+      # business spawning processes, touching privileges, or reaching the
+      # network.
+      - name: Keep the plugin free of processes and privileges
+        run: |
+          ! grep -R -nE '(^|[^[:alnum:]_])(curl|wget|sudo|pkexec|systemctl|NOPASSWD)([^[:alnum:]_]|$)' --include='*.qml' .
+          ! grep -R -nE 'Quickshell\.Io|\bProcess\b|(bash|sh)[[:space:]]*,[[:space:]]*"-c"|eval\(' --include='*.qml' .
+
+      # Every dispatch is built from an address that normalizedAddress() has
+      # already validated, and that function lives in the overlay root. Keeping
+      # both in one file is what makes that guarantee reviewable.
+      - name: Keep Hyprland dispatches in the overlay root
+        run: |
+          test -z "$(grep -l 'Hyprland.dispatch' WorkspaceCard.qml WindowPreview.qml || true)"
+          test -z "$(grep -l '"address:' WorkspaceCard.qml WindowPreview.qml || true)"
+          grep -q 'function normalizedAddress' Spaceview.qml
