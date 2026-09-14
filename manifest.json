@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Emre Can Yılmaz",
   "license": "MIT",
-  "description": "Fullscreen workspace overview with live window previews, trackpad gesture support, and drag-to-move between workspaces",
+  "description": "Workspace overview for Omarchy: live window previews in a fullscreen grid, opened by a three-finger trackpad gesture or a keyboard shortcut, with drag-to-move between workspaces.",
   "kinds": [
     "overlay"
   ],
