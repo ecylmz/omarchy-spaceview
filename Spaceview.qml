@@ -50,8 +50,32 @@ Item {
     ? defaultMonitorBounds.width / defaultMonitorBounds.height : 1.55
   readonly property real outerMargin: Math.max(Style.gapsOut, Style.spacing.panelPadding)
   readonly property real gridSpacing: Style.spacing.lg
-  readonly property real availableWidth: Math.max(1, panel.width - outerMargin * 2)
-  readonly property real availableHeight: Math.max(1, panel.height - outerMargin * 2)
+  // Hyprland's struts for the monitor we draw on, in logical pixels:
+  // [left, top, right, bottom]. The overlay covers the whole screen, so the
+  // grid has to step around the bar itself.
+  readonly property var reservedInsets: {
+    var monitors = Hyprland.monitors ? Hyprland.monitors.values : []
+    var wanted = root.targetScreen ? root.targetScreen.name : ""
+
+    for (var i = 0; i < monitors.length; i++) {
+      var ipc = monitors[i] ? monitors[i].lastIpcObject : null
+      if (!ipc || String(ipc.name || "") !== wanted) continue
+      var reserved = ipc.reserved
+      if (!reserved || reserved.length < 4) break
+      return {
+        left: reserved[0] || 0,
+        top: reserved[1] || 0,
+        right: reserved[2] || 0,
+        bottom: reserved[3] || 0
+      }
+    }
+
+    return { left: 0, top: 0, right: 0, bottom: 0 }
+  }
+  readonly property real availableWidth: Math.max(1, panel.width
+    - reservedInsets.left - reservedInsets.right - outerMargin * 2)
+  readonly property real availableHeight: Math.max(1, panel.height
+    - reservedInsets.top - reservedInsets.bottom - outerMargin * 2)
   readonly property int columns: Math.max(1, Math.min(cardCount,
     Math.ceil(Math.sqrt(cardCount * availableWidth / availableHeight / cardAspectRatio))))
   readonly property int rows: Math.max(1, Math.ceil(cardCount / columns))
@@ -403,8 +427,11 @@ Item {
 
       Grid {
         id: workspaceGrid
+        // Centred on the area the bar leaves behind, not on the raw screen.
         anchors.horizontalCenter: parent.horizontalCenter
+        anchors.horizontalCenterOffset: (root.reservedInsets.left - root.reservedInsets.right) / 2
         anchors.verticalCenter: parent.verticalCenter
+        anchors.verticalCenterOffset: (root.reservedInsets.top - root.reservedInsets.bottom) / 2
         columns: root.columns
         spacing: root.gridSpacing
 
