@@ -35,6 +35,10 @@ BorderSurface {
 
     for (var i = 0; i < windows.length; i++) {
       var ipc = usable && windows[i] ? windows[i].lastIpcObject : null
+      if (ipc && root.behindItsGroup(ipc, windows)) {
+        rects.push(null)
+        continue
+      }
       if (!ipc || !ipc.at || !ipc.size || ipc.size[0] <= 0 || ipc.size[1] <= 0) {
         // Hyprland announces a window before its geometry is queried. Hold
         // that one tile back rather than dropping the whole card to a grid.
@@ -67,6 +71,30 @@ BorderSurface {
     }
     return fallback
   }
+
+  // Hyprland reports every member of a tabbed group at the same geometry, so
+  // drawing all of them stacks the group into a single smear. Only the tab on
+  // top is worth a tile.
+  //
+  // ponytail: focus history is the one field in the client IPC that tells
+  // group members apart — neither `hidden` nor the `grouped` order does.
+  // Swap it for an active-member field if Hyprland ever exposes one.
+  function behindItsGroup(ipc, windows) {
+    var group = ipc.grouped
+    if (!group || group.length < 2) return false
+
+    var order = Number(ipc.focusHistoryID)
+    if (!isFinite(order)) return false
+
+    for (var i = 0; i < windows.length; i++) {
+      var other = windows[i] ? windows[i].lastIpcObject : null
+      if (!other || other.address === ipc.address) continue
+      if (group.indexOf(other.address) === -1) continue
+      if (Number(other.focusHistoryID) < order) return true
+    }
+    return false
+  }
+
   readonly property real headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   readonly property int draggedSourceWorkspaceId: draggedToplevel && draggedToplevel.workspace
     ? Number(draggedToplevel.workspace.id) : -1
