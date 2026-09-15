@@ -9,6 +9,7 @@
   "kinds": [
     "overlay"
   ],
+  "keepLoaded": true,
   "entryPoints": {
     "overlay": "Spaceview.qml"
   }
