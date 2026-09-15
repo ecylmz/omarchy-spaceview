@@ -95,6 +95,14 @@ BorderSurface {
     return false
   }
 
+  // A preview box whose edges fall between physical pixels makes the live
+  // capture resample, which smears terminal text on a fractionally scaled
+  // monitor. Round to the device pixel grid instead.
+  function snap(value) {
+    var ratio = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+    return Math.round(value * ratio) / ratio
+  }
+
   readonly property real headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   readonly property int draggedSourceWorkspaceId: draggedToplevel && draggedToplevel.workspace
     ? Number(draggedToplevel.workspace.id) : -1
@@ -260,9 +268,10 @@ BorderSurface {
     // tall split instead of being stretched to the card.
     Item {
       id: stage
-      width: Math.min(parent.width, parent.height * root.monitorAspect)
-      height: width / root.monitorAspect
-      anchors.centerIn: parent
+      width: root.snap(Math.min(parent.width, parent.height * root.monitorAspect))
+      height: root.snap(width / root.monitorAspect)
+      x: root.snap((parent.width - width) / 2)
+      y: root.snap((parent.height - height) / 2)
 
       readonly property real inset: Math.max(1, Style.space(2)) / 2
 
@@ -277,10 +286,10 @@ BorderSurface {
           readonly property var rect: root.layoutRects[index] || null
 
           visible: rect !== null
-          x: rect ? rect.x * stage.width + stage.inset : 0
-          y: rect ? rect.y * stage.height + stage.inset : 0
-          width: rect ? Math.max(1, rect.width * stage.width - stage.inset * 2) : 1
-          height: rect ? Math.max(1, rect.height * stage.height - stage.inset * 2) : 1
+          x: rect ? root.snap(rect.x * stage.width + stage.inset) : 0
+          y: rect ? root.snap(rect.y * stage.height + stage.inset) : 0
+          width: rect ? Math.max(1, root.snap(rect.width * stage.width - stage.inset * 2)) : 1
+          height: rect ? Math.max(1, root.snap(rect.height * stage.height - stage.inset * 2)) : 1
           z: rect && rect.floating ? 2 : 1
 
           toplevel: modelData
