@@ -29,41 +29,16 @@ BorderSurface {
   readonly property real titleHeight: Math.min(height * 0.3,
     Math.max(Style.space(28), Style.font.bodySmall + Style.spacing.controlPaddingY * 2))
 
+  // Live capture only runs while the overview is on screen: a closed overview
+  // has no business streaming every window on the machine.
+  property bool capturing: true
+
   // "l", "r", "u" or "d" while a dragged window would land on that side of
   // this one; empty when this tile is not the drop target.
   property string dropDirection: ""
 
   readonly property point dragScenePosition: previewDrag.active
     ? previewDrag.centroid.scenePosition : Qt.point(0, 0)
-
-  // The capture is a single frame, so it has to be retaken whenever the
-  // compositor resizes the window under it — otherwise a re-tiled window
-  // keeps the shape it had when the overview opened.
-  readonly property var ipcObject: toplevel ? toplevel.lastIpcObject : null
-  property var capturedSize: null
-
-  // A tile is reused when its window closes or when the drag ghost changes
-  // hands, so forget the captured size or a same-sized successor keeps the
-  // previous window's frame.
-  onToplevelChanged: {
-    capturedSize = null
-    if (toplevel) recaptureTimer.restart()
-  }
-
-  onIpcObjectChanged: {
-    var size = ipcObject && ipcObject.size ? ipcObject.size : null
-    if (!size) return
-    if (capturedSize && capturedSize[0] === size[0] && capturedSize[1] === size[1]) return
-    capturedSize = size
-    recaptureTimer.restart()
-  }
-
-  // Give the client a moment to draw at its new size before recapturing.
-  Timer {
-    id: recaptureTimer
-    interval: 180
-    onTriggered: preview.captureFrame()
-  }
 
   signal activated()
   signal dragStarted(var toplevel)
@@ -96,8 +71,8 @@ BorderSurface {
     ScreencopyView {
       id: preview
       anchors.centerIn: parent
-      captureSource: root.waylandToplevel
-      live: false
+      captureSource: root.capturing ? root.waylandToplevel : null
+      live: root.capturing
       paintCursor: false
       width: {
         if (!hasContent || sourceSize.width <= 0 || sourceSize.height <= 0) return parent.width

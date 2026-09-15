@@ -13,6 +13,7 @@ BorderSurface {
   property bool addWorkspace: false
   property bool keyboardSelected: false
   property var draggedToplevel: null
+  property bool capturing: true
   // { x, y, width, height } of the workspace's monitor in logical pixels.
   property var monitorBounds: null
 
@@ -255,6 +256,7 @@ BorderSurface {
           z: rect && rect.floating ? 2 : 1
 
           toplevel: modelData
+          capturing: root.capturing
           dropDirection: root.dropTargetPreview === previewItem ? root.dropTargetDirection : ""
           onActivated: root.windowActivated(modelData)
           onDragStarted: root.windowDragStarted(modelData)

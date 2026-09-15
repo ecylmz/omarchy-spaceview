@@ -384,6 +384,7 @@ Item {
       WindowPreview {
         anchors.fill: parent
         toplevel: root.draggedToplevel
+        capturing: root.draggedToplevel !== null
         enabled: false
       }
     }
@@ -423,6 +424,7 @@ Item {
             workspace: isAddCard ? null : root.workspaceById(modelData)
             monitorBounds: isAddCard ? null : root.monitorBoundsFor(modelData)
             addWorkspace: isAddCard
+            capturing: root.opened
             draggedToplevel: root.draggedToplevel
             keyboardSelected: index === root.selectedCardIndex
             focused: !isAddCard && Hyprland.focusedWorkspace !== null
