@@ -194,6 +194,7 @@ BorderSurface {
       Text {
         anchors.verticalCenter: parent.verticalCenter
         text: root.workspaceId === 10 ? "Workspace 0" : "Workspace " + root.workspaceId
+        textFormat: Text.PlainText
         color: root.focused ? Color.accent : Color.menu.text
         opacity: root.focused ? 1 : (root.occupied ? 0.82 : 0.5)
         font.family: Style.font.menuFamily
@@ -209,6 +210,7 @@ BorderSurface {
     visible: !root.occupied && !root.addWorkspace
     anchors.centerIn: previewArea
     text: "Empty"
+    textFormat: Text.PlainText
     color: Color.menu.text
     opacity: 0.42
     font.family: Style.font.menuFamily
@@ -268,6 +270,7 @@ BorderSurface {
     anchors.centerIn: parent
     z: 3
     text: "+"
+    textFormat: Text.PlainText
     color: Color.menu.text
     opacity: root.dropHovered ? 1 : 0.58
     font.family: Style.font.menuFamily
