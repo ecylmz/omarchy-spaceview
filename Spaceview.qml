@@ -26,9 +26,10 @@ Item {
     "openwindow", "closewindow", "movewindow", "movewindowv2",
     "workspace", "workspacev2", "createworkspace", "createworkspacev2",
     "destroyworkspace", "destroyworkspacev2", "moveworkspace", "moveworkspacev2",
-    "changefloatingmode", "fullscreen", "togglegroup", "moveintogroup", "moveoutofgroup"
+    "activespecial", "activespecialv2", "changefloatingmode", "fullscreen", "togglegroup", "moveintogroup", "moveoutofgroup"
   ]
   property var pendingReposition: null
+  property var pendingActivation: null
   // What the user asked for while a reposition was still in flight, so
   // finishing that move does not drag them back to where they started.
   property int requestedWorkspaceId: -1
@@ -44,7 +45,11 @@ Item {
     if (nextWorkspaceId > 0) ids.push(nextWorkspaceId)
     return ids
   }
-  readonly property int cardCount: overviewCardModel.length
+  readonly property var drawerWorkspace: root.findDrawerWorkspace()
+  readonly property int gridCardCount: overviewCardModel.length
+  readonly property int cardCount: gridCardCount + 1
+  readonly property real drawerHeight: Math.min(Style.space(85), availableHeight * 0.12)
+  readonly property real drawerSpace: drawerHeight + gridSpacing
   readonly property var defaultMonitorBounds: root.monitorBoundsFor(-1)
   readonly property real cardAspectRatio: defaultMonitorBounds && defaultMonitorBounds.height > 0
     ? defaultMonitorBounds.width / defaultMonitorBounds.height : 1.55
@@ -76,13 +81,14 @@ Item {
     - reservedInsets.left - reservedInsets.right - outerMargin * 2)
   readonly property real availableHeight: Math.max(1, panel.height
     - reservedInsets.top - reservedInsets.bottom - outerMargin * 2)
-  readonly property int columns: Math.max(1, Math.min(cardCount,
-    Math.ceil(Math.sqrt(cardCount * availableWidth / availableHeight / cardAspectRatio))))
-  readonly property int rows: Math.max(1, Math.ceil(cardCount / columns))
+  // Keep up to three cards on one row; cardWidth scales them to fit.
+  readonly property int columns: Math.max(1, Math.min(gridCardCount,
+    Math.max(3, Math.ceil(Math.sqrt(gridCardCount * availableWidth / availableHeight / cardAspectRatio)))))
+  readonly property int rows: Math.max(1, Math.ceil(gridCardCount / columns))
   readonly property real cardWidth: Math.max(1, Math.min(
     Style.space(520),
     (availableWidth - gridSpacing * (columns - 1)) / columns,
-    ((availableHeight - gridSpacing * (rows - 1)) / rows) * cardAspectRatio))
+    ((availableHeight - drawerSpace - gridSpacing * (rows - 1)) / rows) * cardAspectRatio))
   readonly property real cardHeight: Math.max(1, cardWidth / cardAspectRatio)
 
   // Logical bounds of the monitor a workspace lives on, used to scale window
@@ -119,14 +125,52 @@ Item {
     return null
   }
 
-  // Always show 1..5 so the grid has a stable shape, plus anything else live.
+  function findDrawerWorkspace() {
+    var values = Hyprland.workspaces.values
+    for (var i = 0; i < values.length; i++) {
+      var ipc = values[i].lastIpcObject
+      if (ipc && ipc.name === "special:scratchpad") return values[i]
+    }
+    return null
+  }
+
+  function drawerIsOpen() {
+    var monitor = Hyprland.focusedMonitor
+    var ipc = monitor ? monitor.lastIpcObject : null
+    return !!(ipc && ipc.specialWorkspace && ipc.specialWorkspace.name === "special:scratchpad")
+  }
+
+  function activateDrawer() {
+    root.flushPendingReposition()
+    root.dismissThenActivate(function() {
+      if (!root.drawerIsOpen())
+        Hyprland.dispatch('hl.dsp.workspace.toggle_special("scratchpad")')
+    })
+  }
+
+  function moveWindowToDrawer(toplevel) {
+    var address = root.normalizedAddress(toplevel)
+    var workspace = toplevel && toplevel.workspace
+    var ipc = workspace ? workspace.lastIpcObject : null
+    if (!address || (ipc && ipc.name === "special:scratchpad")) return false
+    Hyprland.dispatch('hl.dsp.window.move({ workspace = "special:scratchpad", window = "address:'
+      + address + '", follow = false })')
+    root.refreshSoon()
+    return true
+  }
+
+  // Hide empty workspaces, except the current one so it remains selectable.
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5]
+    var ids = []
+    var focused = Hyprland.focusedWorkspace
     var values = Hyprland.workspaces.values
 
     for (var i = 0; i < values.length; i++) {
-      var id = values[i].id
-      if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
+      var workspace = values[i]
+      var id = workspace.id
+      if (id > 0 && id <= 10
+          && (workspace.toplevels.values.length > 0 || (focused && id === focused.id)))
+        ids.push(id)
     }
 
     ids.sort(function(left, right) { return left - right })
@@ -134,9 +178,11 @@ Item {
   }
 
   function nextWorkspaceAfter(ids) {
-    if (!ids || ids.length === 0) return -1
-    var next = ids[ids.length - 1] + 1
-    return next <= 10 ? next : -1
+    // Reuse an empty slot, including when workspace 10 is already occupied.
+    for (var id = 1; id <= 10; id++) {
+      if (ids.indexOf(id) === -1) return id
+    }
+    return -1
   }
 
   function cardIndexAfterMove(index, dx, dy, count, columnCount) {
@@ -153,24 +199,37 @@ Item {
     return Math.min(targetRow * cols + column, count - 1)
   }
 
-  function initialSelectedCardIndex() {
+  function focusedCardIndex() {
     var focused = Hyprland.focusedWorkspace
-    if (focused) {
-      var index = root.workspaceModel.indexOf(focused.id)
-      if (index >= 0) return index
-    }
+    return focused ? root.workspaceModel.indexOf(focused.id) : -1
+  }
+
+  function initialSelectedCardIndex() {
+    if (root.drawerIsOpen()) return root.gridCardCount
+    var index = root.focusedCardIndex()
+    if (index >= 0) return index
     return root.cardCount > 0 ? 0 : -1
   }
 
   function moveCardSelection(dx, dy) {
-    root.selectedCardIndex = root.cardIndexAfterMove(
-      root.selectedCardIndex, dx, dy, root.cardCount, root.columns)
+    var index = root.selectedCardIndex
+    if (index === root.gridCardCount) {
+      if (dy < 0) root.selectedCardIndex = root.gridCardCount - 1
+    } else if (dy > 0
+        && Math.floor(index / root.columns) === root.rows - 1) {
+      root.selectedCardIndex = root.gridCardCount
+    } else {
+      root.selectedCardIndex = root.cardIndexAfterMove(
+        index, dx, dy, root.gridCardCount, root.columns)
+    }
   }
 
   function activateSelectedCard() {
     var index = root.selectedCardIndex
     if (index < 0 || index >= root.cardCount) return
-    if (root.nextWorkspaceId > 0 && index === root.workspaceCount)
+    if (index === root.gridCardCount)
+      root.activateDrawer()
+    else if (root.nextWorkspaceId > 0 && index === root.workspaceCount)
       root.activateWorkspace(root.nextWorkspaceId)
     else
       root.activateWorkspace(root.overviewCardModel[index])
@@ -221,9 +280,11 @@ Item {
     }
   }
 
-  function open(payloadJson) {
+  function open() {
+    root.pendingActivation = null
     Hyprland.refreshToplevels()
     Hyprland.refreshWorkspaces()
+    Hyprland.refreshMonitors()
     rescueTimer.restart()
     root.targetScreen = root.focusedScreen()
     root.draggedToplevel = null
@@ -250,24 +311,63 @@ Item {
       root.shell.hide((root.manifest && root.manifest.id) || "ecylmz.spaceview")
   }
 
+  // Window focus is refused while the overlay owns an exclusive keyboard
+  // grab. Wait for the compositor's unmap event, not an arbitrary delay or
+  // Qt.callLater (which need not wait for the Wayland unmap to be processed).
+  function dismissThenActivate(action) {
+    if (root.opened && panel.visible) {
+      root.pendingActivation = action
+      root.dismiss()
+    } else {
+      root.dismiss()
+      action()
+    }
+  }
+
   function activateWorkspace(workspaceId) {
     if (workspaceId <= 0 || workspaceId > 10) return
     root.requestedWorkspaceId = workspaceId
-    Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + workspaceId + "\" })")
-    Qt.callLater(root.dismiss)
+    root.dismissThenActivate(function() {
+      Hyprland.dispatch("hl.dsp.focus({ workspace = \"" + workspaceId + "\" })")
+    })
+  }
+
+  function closeWorkspace(workspaceId) {
+    if (workspaceId <= 0 || workspaceId > 10) return
+    var workspace = root.workspaceById(workspaceId)
+    if (!workspace) return
+
+    // Snapshot validated addresses: a close can destroy its model entry, and
+    // apps may keep a window open to ask about unsaved work. Never force-kill.
+    var windows = workspace.toplevels.values.slice()
+    var pending = root.pendingReposition
+    if (pending && pending.workspaceId === workspaceId)
+      windows.push({ address: pending.address })
+    root.flushPendingReposition()
+
+    var addresses = []
+    for (var i = 0; i < windows.length; i++) {
+      var address = root.normalizedAddress(windows[i])
+      if (address && addresses.indexOf(address) === -1) addresses.push(address)
+    }
+    for (var j = 0; j < addresses.length; j++)
+      Hyprland.dispatch('hl.dsp.window.close({ window = "address:' + addresses[j] + '" })')
+    root.refreshSoon()
   }
 
   function activateWindow(toplevel) {
     var address = root.normalizedAddress(toplevel)
     if (address) {
       root.requestedWindowAddress = address
-      Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + address + "\" })")
+      root.dismissThenActivate(function() {
+        Hyprland.dispatch("hl.dsp.focus({ window = \"address:" + address + "\" })")
+      })
     }
-    else if (toplevel && toplevel.wayland)
-      toplevel.wayland.activate()
-    else
-      return
-    Qt.callLater(root.dismiss)
+    else if (toplevel && toplevel.wayland) {
+      root.dismissThenActivate(function() {
+        if (toplevel && toplevel.wayland) toplevel.wayland.activate()
+      })
+    }
   }
 
   function moveWindowToWorkspace(toplevel, workspaceId) {
@@ -425,13 +525,35 @@ Item {
         else if (text === "0") root.activateWorkspace(10)
       }
 
+      WorkspaceCard {
+        anchors.top: workspaceGrid.bottom
+        anchors.topMargin: root.gridSpacing
+        anchors.horizontalCenter: workspaceGrid.horizontalCenter
+        width: workspaceGrid.width
+        height: root.drawerHeight
+        drawer: true
+        workspaceId: root.drawerWorkspace ? root.drawerWorkspace.id : -1
+        workspace: root.drawerWorkspace
+        monitorBounds: root.monitorBoundsFor(workspaceId)
+        capturing: root.opened
+        draggedToplevel: root.draggedToplevel
+        keyboardSelected: root.selectedCardIndex === root.gridCardCount
+        focused: root.drawerIsOpen()
+        onWorkspaceActivated: root.activateDrawer()
+        onWindowActivated: function(toplevel) { root.activateWindow(toplevel) }
+        onWindowDragStarted: function(toplevel) { root.beginWindowDrag(toplevel) }
+        onWindowDragMoved: function(scenePosition) { root.dragScenePosition = scenePosition }
+        onWindowDragFinished: function(toplevel) { root.endWindowDrag(toplevel) }
+        onWindowDropped: function(toplevel) { root.moveWindowToDrawer(toplevel) }
+      }
+
       Grid {
         id: workspaceGrid
         // Centred on the area the bar leaves behind, not on the raw screen.
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.horizontalCenterOffset: (root.reservedInsets.left - root.reservedInsets.right) / 2
         anchors.verticalCenter: parent.verticalCenter
-        anchors.verticalCenterOffset: (root.reservedInsets.top - root.reservedInsets.bottom) / 2
+        anchors.verticalCenterOffset: (root.reservedInsets.top - root.reservedInsets.bottom - root.drawerSpace) / 2
         columns: root.columns
         spacing: root.gridSpacing
 
@@ -457,6 +579,7 @@ Item {
             focused: !isAddCard && Hyprland.focusedWorkspace !== null
               && Hyprland.focusedWorkspace.id === modelData
             onWorkspaceActivated: root.activateWorkspace(modelData)
+            onCloseRequested: root.closeWorkspace(modelData)
             onWindowActivated: function(toplevel) { root.activateWindow(toplevel) }
             onWindowDragStarted: function(toplevel) { root.beginWindowDrag(toplevel) }
             onWindowDragMoved: function(scenePosition) { root.dragScenePosition = scenePosition }
@@ -479,11 +602,20 @@ Item {
   // fire constantly and would keep the settle timer restarting forever.
   Connections {
     target: Hyprland
-    enabled: root.opened
-
     function onRawEvent(event) {
       var name = String(event && event.name ? event.name : "").toLowerCase()
-      if (root.layoutEvents.indexOf(name) !== -1) root.refreshSoon()
+      if (name === "closelayer" && event.data === "spaceview"
+          && !root.opened && root.pendingActivation) {
+        var action = root.pendingActivation
+        root.pendingActivation = null
+        action()
+      }
+      // Quickshell does not refresh monitor IPC state on scratchpad toggles.
+      // Keep it current even while closed, so reopening an open drawer never
+      // mistakes it for a hidden one and toggles it off.
+      if (name === "activespecial" || name === "activespecialv2")
+        Hyprland.refreshMonitors()
+      if (root.opened && root.layoutEvents.indexOf(name) !== -1) root.refreshSoon()
     }
   }
 

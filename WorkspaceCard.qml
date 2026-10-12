@@ -2,7 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// One workspace in the grid: a labelled card holding a tile per window.
+// One workspace in the grid: a card holding a tile per window.
 // Doubles as a drop target so windows can be dragged between workspaces.
 BorderSurface {
   id: root
@@ -11,6 +11,7 @@ BorderSurface {
   property var workspace: null
   property bool focused: false
   property bool addWorkspace: false
+  property bool drawer: false
   property bool keyboardSelected: false
   property var draggedToplevel: null
   property bool capturing: true
@@ -30,6 +31,14 @@ BorderSurface {
     var bounds = root.monitorBounds
     var usable = bounds && bounds.width > 0 && bounds.height > 0
     var rects = []
+
+    // Stored windows are individual thumbnails, not a miniature desktop.
+    if (root.drawer) {
+      for (var d = 0; d < windows.length; d++)
+        rects.push({ x: d / windows.length, y: 0,
+          width: 1 / windows.length, height: 1, floating: false })
+      return rects
+    }
 
     var resolved = 0
 
@@ -95,6 +104,25 @@ BorderSurface {
     return false
   }
 
+  // How far to slide the tiles, as fractions of the monitor, so the box around
+  // all of them sits in the middle of the stage. A lone window or a layout
+  // pushed aside by the bar would otherwise hang off-centre in the card.
+  readonly property var groupOffset: {
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+
+    for (var i = 0; i < layoutRects.length; i++) {
+      var rect = layoutRects[i]
+      if (!rect) continue
+      minX = Math.min(minX, rect.x)
+      minY = Math.min(minY, rect.y)
+      maxX = Math.max(maxX, rect.x + rect.width)
+      maxY = Math.max(maxY, rect.y + rect.height)
+    }
+
+    if (!isFinite(minX)) return { x: 0, y: 0 }
+    return { x: 0.5 - (minX + maxX) / 2, y: 0.5 - (minY + maxY) / 2 }
+  }
+
   // A preview box whose edges fall between physical pixels makes the live
   // capture resample, which smears terminal text on a fractionally scaled
   // monitor. Round to the device pixel grid instead.
@@ -103,18 +131,19 @@ BorderSurface {
     return Math.round(value * ratio) / ratio
   }
 
-  readonly property real headerHeight: Math.max(Style.space(34), Style.font.title + Style.spacing.controlPaddingY * 2)
   readonly property int draggedSourceWorkspaceId: draggedToplevel && draggedToplevel.workspace
     ? Number(draggedToplevel.workspace.id) : -1
   readonly property bool dragActive: draggedToplevel !== null
     && String(draggedToplevel.address || "") !== ""
-    && workspaceId > 0 && workspaceId <= 10
+    && (drawer || (workspaceId > 0 && workspaceId <= 10))
   readonly property bool foreignDrag: dragActive && draggedSourceWorkspaceId !== workspaceId
-  readonly property bool validDropTarget: dragActive && (foreignDrag || windowCount > 1)
+  readonly property bool validDropTarget: dragActive && (foreignDrag || (!drawer && windowCount > 1))
   readonly property bool dropHovered: foreignDrag && dropArea.containsDrag
     && root.dropTargetPreview === null
   readonly property real accentBorderWidth: Math.max(Style.space(2), Style.focusBorderWidth)
-  readonly property var normalBorderSpec: focused
+  readonly property var normalBorderSpec: drawer
+    ? Border.flat(keyboardSelected ? Color.accent : "transparent", keyboardSelected ? root.accentBorderWidth : 0)
+    : focused
     ? Border.flat(Color.accent, root.accentBorderWidth)
     : (keyboardSelected
       ? Border.withWidth(Border.controlSpec("hover-cursor", Color.menu.text, Color.accent), Math.max(1, Style.hoverBorderWidth))
@@ -128,7 +157,8 @@ BorderSurface {
   // Which tile is under the pointer, and which side of it the window would
   // take. Grid children are WindowPreview items laid out inside previewArea.
   function updateDropTarget(cardX, cardY) {
-    if (!validDropTarget) {
+    // The drawer is storage, not a numbered workspace with directional tiling.
+    if (root.drawer || !validDropTarget) {
       root.dropTargetPreview = null
       root.dropTargetDirection = ""
       return
@@ -163,6 +193,7 @@ BorderSurface {
   }
 
   signal workspaceActivated()
+  signal closeRequested()
   signal windowActivated(var toplevel)
   signal windowDragStarted(var toplevel)
   signal windowDragFinished(var toplevel)
@@ -171,8 +202,9 @@ BorderSurface {
   signal windowDragMoved(point scenePosition)
 
   radius: Style.cornerRadius
-  color: focused
-    ? Color.menu.background
+  color: drawer
+    ? Util.alpha(Color.menu.background, 0.4)
+    : focused ? Color.menu.background
     : (occupied ? Util.alpha(Color.menu.background, 0.82) : Util.alpha(Color.menu.background, 0.62))
   borderSpec: dropHovered
     ? Border.withWidth(Border.controlSpec("focus", Color.menu.text, Color.accent), Math.max(Style.space(2), Style.focusBorderWidth))
@@ -203,48 +235,8 @@ BorderSurface {
     Behavior on color { ColorAnimation { duration: 60 } }
   }
 
-  Item {
-    id: header
-    visible: !root.addWorkspace
-    z: 3
-    anchors.top: parent.top
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.leftMargin: Style.spacing.md
-    anchors.rightMargin: Style.spacing.md
-    height: root.headerHeight
-
-    Row {
-      anchors.verticalCenter: parent.verticalCenter
-      width: parent.width
-      spacing: Style.spacing.sm
-
-      Rectangle {
-        anchors.verticalCenter: parent.verticalCenter
-        visible: root.focused
-        width: visible ? Style.space(8) : 0
-        height: width
-        radius: width / 2
-        color: Color.accent
-      }
-
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        text: root.workspaceId === 10 ? "Workspace 0" : "Workspace " + root.workspaceId
-        textFormat: Text.PlainText
-        color: root.focused ? Color.accent : Color.menu.text
-        opacity: root.focused ? 1 : (root.occupied ? 0.82 : 0.5)
-        font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.title
-        font.bold: root.focused
-        elide: Text.ElideRight
-        verticalAlignment: Text.AlignVCenter
-      }
-    }
-  }
-
   Text {
-    visible: !root.occupied && !root.addWorkspace
+    visible: !root.occupied && !root.addWorkspace && !root.drawer
     anchors.centerIn: previewArea
     text: "Empty"
     textFormat: Text.PlainText
@@ -254,26 +246,59 @@ BorderSurface {
     font.pixelSize: Style.font.body
   }
 
+  Row {
+    id: drawerLabel
+    visible: root.drawer
+    z: 6
+    anchors.left: parent.left
+    anchors.leftMargin: Style.spacing.md
+    anchors.verticalCenter: parent.verticalCenter
+    spacing: Style.spacing.sm
+
+    Rectangle {
+      width: Style.space(16)
+      height: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      color: "transparent"
+      border.color: Color.menu.text
+      radius: Style.space(2)
+      opacity: 0.7
+      Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Style.space(3)
+        width: Style.space(6)
+        height: Math.max(1, Style.space(1))
+        color: Color.menu.text
+      }
+    }
+    Text {
+      text: "Drawer"
+      color: Color.menu.text
+      font.family: Style.font.menuFamily
+      font.pixelSize: Style.font.body
+    }
+  }
+
   Item {
     id: previewArea
     visible: !root.addWorkspace
     z: 5
-    anchors.top: header.bottom
-    anchors.left: parent.left
-    anchors.right: parent.right
-    anchors.bottom: parent.bottom
+    anchors.fill: parent
     anchors.margins: Style.spacing.md
+    anchors.leftMargin: root.drawer ? drawerLabel.width + Style.spacing.md * 2 : Style.spacing.md
 
     // The stage keeps the monitor's aspect ratio, so a tall split reads as a
     // tall split instead of being stretched to the card.
     Item {
       id: stage
-      width: root.snap(Math.min(parent.width, parent.height * root.monitorAspect))
-      height: root.snap(width / root.monitorAspect)
-      x: root.snap((parent.width - width) / 2)
+      width: root.snap(Math.min(parent.width,
+        parent.height * root.monitorAspect * (root.drawer ? Math.max(1, root.windowCount) : 1)))
+      height: root.snap(root.drawer ? parent.height : width / root.monitorAspect)
+      x: root.drawer ? 0 : root.snap((parent.width - width) / 2)
       y: root.snap((parent.height - height) / 2)
 
-      readonly property real inset: Math.max(1, Style.space(2)) / 2
+      readonly property real inset: root.drawer ? Style.spacing.sm / 2 : Math.max(1, Style.space(2)) / 2
 
       Repeater {
         model: root.toplevelModel
@@ -286,8 +311,8 @@ BorderSurface {
           readonly property var rect: root.layoutRects[index] || null
 
           visible: rect !== null
-          x: rect ? root.snap(rect.x * stage.width + stage.inset) : 0
-          y: rect ? root.snap(rect.y * stage.height + stage.inset) : 0
+          x: rect ? root.snap((rect.x + root.groupOffset.x) * stage.width + stage.inset) : 0
+          y: rect ? root.snap((rect.y + root.groupOffset.y) * stage.height + stage.inset) : 0
           width: rect ? Math.max(1, root.snap(rect.width * stage.width - stage.inset * 2)) : 1
           height: rect ? Math.max(1, root.snap(rect.height * stage.height - stage.inset * 2)) : 1
           z: rect && rect.floating ? 2 : 1
@@ -316,6 +341,38 @@ BorderSurface {
     font.pixelSize: Style.font.displayLarge
     horizontalAlignment: Text.AlignHCenter
     verticalAlignment: Text.AlignVCenter
+  }
+
+  HoverHandler { id: cardHover }
+
+  PanelActionButton {
+    id: closeButton
+    property bool pointerHovered: false
+    onHovered: function(isHovered) { pointerHovered = isHovered }
+    anchors.top: parent.top
+    anchors.right: parent.right
+    anchors.margins: Style.spacing.sm
+    z: 30
+    readonly property bool revealed: cardHover.hovered && root.occupied
+      && !root.drawer && !root.addWorkspace && !root.dragActive
+    opacity: revealed ? 1 : 0
+    visible: opacity > 0
+    enabled: revealed
+    Behavior on opacity { NumberAnimation { duration: 90 } }
+    iconText: "×"
+    fontSize: Style.font.icon * 1.6
+    foreground: Color.menu.text
+    hoverColor: Color.urgent
+    color: "transparent"
+    onClicked: root.closeRequested()
+
+    PanelToolTip {
+      visible: closeButton.pointerHovered && closeButton.enabled
+      text: "Close workspace and its " + root.windowCount
+        + (root.windowCount === 1 ? " window" : " windows")
+      x: (closeButton.width - width) / 2
+      y: -height - Style.space(16)
+    }
   }
 
   DropArea {
